@@ -34,7 +34,7 @@
 
   - name: Save MTA user info (single user, auth enabled)
     when: ocp4_workload_tenant_mta_feature_auth_required | default(true)
-    agnosticd.core.agnosticd_user_info:
+    rhpds.rhads_ols_modernize.agnosticd_user_info:
       data:
         mta_url: >-
           https://mta-{{ ocp4_workload_tenant_mta_namespace }}.{{
@@ -47,7 +47,7 @@
 
   - name: Save MTA user info (single user, auth disabled)
     when: not ocp4_workload_tenant_mta_feature_auth_required | default(true)
-    agnosticd.core.agnosticd_user_info:
+    rhpds.rhads_ols_modernize.agnosticd_user_info:
       data:
         mta_url: >-
           https://mta-{{ ocp4_workload_tenant_mta_namespace }}.{{
@@ -57,7 +57,7 @@
           openshift_cluster_ingress_domain }}/hub
 
   - name: Save MTA data for module reuse
-    agnosticd.core.agnosticd_user_data:
+    rhpds.rhads_ols_modernize.agnosticd_user_info:
       data:
         mta_api_url: >-
           https://mta-{{ ocp4_workload_tenant_mta_namespace }}.{{
