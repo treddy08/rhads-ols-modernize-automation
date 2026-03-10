@@ -1,0 +1,16 @@
+---
+# --------------------------------
+# MTA Operator Installation (Cluster-wide)
+# --------------------------------
+ocp4_workload_cluster_mta_operator_name: mta-operator
+ocp4_workload_cluster_mta_namespace: openshift-mta
+ocp4_workload_cluster_mta_channel: stable-v8.0
+ocp4_workload_cluster_mta_starting_csv: ""
+ocp4_workload_cluster_mta_automatic_install_plan_approval: true
+
+# --------------------------------
+# Use a Catalog Snapshot
+# --------------------------------
+ocp4_workload_cluster_mta_catalogsource_setup: false
+ocp4_workload_cluster_mta_catalogsource_image: quay.io/rhpds/olm_snapshot_redhat_catalog
+ocp4_workload_cluster_mta_catalogsource_image_tag: v4.15_2024_03_11

@@ -1,0 +1,443 @@
+= ocp4_workload_tenant_mta - Deploy MTA Tenant Instances
+
+== Role Overview
+
+* This role creates per-user Migration Toolkit for Applications (MTA) tenant instances using OpenShift GitOps/ArgoCD.
+* It deploys MTA via a Helm chart that creates a Tackle CR (Custom Resource) in each user's namespace.
+* The role requires the MTA operator to be installed cluster-wide (use `ocp4_workload_cluster_mta` role first).
+* Designed for single-user deployments in RHDP (Red Hat Demo Platform) environments.
+
+== Architecture
+
+=== Component-Based Deployment
+
+This role works in conjunction with the cluster-wide MTA operator:
+
+----
+OpenShift Cluster
+├── openshift-mta namespace
+│   └── MTA Operator (installed via ocp4_workload_cluster_mta)
+├── openshift-gitops namespace
+│   └── ArgoCD Application (created by this role)
+└── User namespace (e.g., user-abc123-mta)
+    └── Tackle CR (MTA instance deployed by ArgoCD)
+        ├── MTA UI
+        ├── MTA Hub API
+        ├── PostgreSQL databases
+        └── Storage volumes
+----
+
+=== Deployment Flow
+
+1. **Check ArgoCD Installation**: Verifies OpenShift GitOps/ArgoCD is installed
+2. **Check ArgoCD AppProject**: Verifies user's ArgoCD AppProject exists
+3. **Create ArgoCD Application**: Deploys an ArgoCD Application resource
+4. **ArgoCD Syncs Helm Chart**: ArgoCD deploys the MTA Helm chart
+5. **Helm Creates Tackle CR**: Helm chart creates a Tackle Custom Resource
+6. **Operator Creates Resources**: MTA operator watches and creates MTA components
+7. **Save User Info**: Stores MTA URL and credentials for user access
+
+== Dependencies
+
+=== Required
+
+* **OpenShift GitOps/ArgoCD**: Must be installed in `openshift-gitops` namespace
+* **MTA Operator**: Must be installed cluster-wide (use `ocp4_workload_cluster_mta` role)
+* **ArgoCD Project**: User's ArgoCD project must exist (e.g., `appproject-user-abc123`)
+
+=== Collections
+
+* `kubernetes.core` - For k8s resource management
+* `agnosticd.core` - For user info data collection
+
+== How It Works
+
+=== ArgoCD Application
+
+The role creates an ArgoCD Application that:
+
+* References a Helm chart from GitHub (`agnosticd_workload_helm_charts`)
+* Creates the user's namespace automatically (`CreateNamespace=true`)
+* Deploys a Tackle CR via the Helm chart
+* Grants the user admin permissions to their namespace
+* Configures storage volumes and authentication settings
+
+=== Tackle CR
+
+The Helm chart creates a Tackle Custom Resource with:
+
+* Authentication settings (enabled/disabled)
+* Storage volume sizes for Maven cache, databases, etc.
+* Storage class configurations (RWX/RWO)
+* Optional seeding job for pre-populating data
+
+=== User Access
+
+After deployment, users access MTA via:
+
+* **URL**: `https://mta-{namespace}.{cluster_domain}`
+* **Credentials**: Provided via `agnosticd_user_info` (if auth enabled)
+
+== Variables
+
+All variables are defined in `./defaults/main.yml`:
+
+=== Helm Chart Configuration
+
+[cols="2,1,3",options="header"]
+|===
+| Variable | Default | Description
+
+| `ocp4_workload_tenant_mta_repo`
+| `https://github.com/redhat-gpte-devopsautomation/agnosticd_workload_helm_charts.git`
+| GitHub repository containing MTA Helm chart
+
+| `ocp4_workload_tenant_mta_repo_tag`
+| `main`
+| Git tag/branch to use
+
+| `ocp4_workload_tenant_mta_repo_path`
+| `mta8`
+| Path to Helm chart in repository
+|===
+
+=== User and Namespace Configuration
+
+[cols="2,1,3",options="header"]
+|===
+| Variable | Default | Description
+
+| `ocp4_workload_tenant_mta_user`
+| `user-{{ guid }}`
+| Username for the MTA tenant
+
+| `ocp4_workload_tenant_mta_namespace`
+| `{{ ocp4_workload_tenant_mta_user }}-mta`
+| Namespace where MTA will be deployed
+
+| `ocp4_workload_tenant_mta_role`
+| `admin`
+| Role to grant user in their namespace
+|===
+
+=== ArgoCD Configuration
+
+[cols="2,1,3",options="header"]
+|===
+| Variable | Default | Description
+
+| `ocp4_workload_tenant_mta_user_app_project_prefix`
+| `appproject`
+| Prefix for ArgoCD project name
+|===
+
+=== Tackle Seeding (Optional)
+
+[cols="2,1,3",options="header"]
+|===
+| Variable | Default | Description
+
+| `ocp4_workload_tenant_mta_seed`
+| `false`
+| Enable/disable pre-seeding MTA with data
+
+| `ocp4_workload_tenant_mta_seed_image`
+| `quay.io/gpte-devops-automation/tackle2-setup`
+| Container image for seeding job
+
+| `ocp4_workload_tenant_mta_seed_tag`
+| `release-0.8-mta8`
+| Image tag for seeding job
+
+| `ocp4_workload_tenant_mta_seed_pull_policy`
+| `IfNotPresent`
+| Image pull policy for seeding job
+|===
+
+=== Tackle Instance Settings
+
+[cols="2,1,3",options="header"]
+|===
+| Variable | Default | Description
+
+| `ocp4_workload_tenant_mta_feature_auth_required`
+| `false`
+| Enable/disable authentication
+
+| `ocp4_workload_tenant_mta_maven_data_volume_size`
+| `10Gi`
+| Maven cache volume size
+
+| `ocp4_workload_tenant_mta_hub_database_volume_size`
+| `5Gi`
+| Hub database volume size
+
+| `ocp4_workload_tenant_mta_keycloak_database_data_volume_size`
+| `1Gi`
+| Keycloak database volume size
+
+| `ocp4_workload_tenant_mta_pathfinder_database_data_volume_size`
+| `1Gi`
+| Pathfinder database volume size
+
+| `ocp4_workload_tenant_mta_rwx_supported`
+| `false`
+| Enable ReadWriteMany storage
+|===
+
+=== Optional Storage Classes
+
+These variables are optional and only used if defined:
+
+[cols="2,1,3",options="header"]
+|===
+| Variable | Default | Description
+
+| `ocp4_workload_tenant_mta_rwx_storage_class`
+| _undefined_
+| Storage class for ReadWriteMany volumes
+
+| `ocp4_workload_tenant_mta_rwo_storage_class`
+| _undefined_
+| Storage class for ReadWriteOnce volumes
+|===
+
+== Usage Examples
+
+=== Basic Single-User Deployment
+
+[source,yaml]
+----
+workloads:
+  - rhads_ols_modernize.ocp4_workload_cluster_mta  # Install operator cluster-wide
+  - rhads_ols_modernize.ocp4_workload_tenant_mta   # Create user instance
+
+# User will be: user-abc123
+# Namespace: user-abc123-mta
+# URL: https://mta-user-abc123-mta.apps.cluster.example.com
+----
+
+=== Custom User and Namespace
+
+[source,yaml]
+----
+ocp4_workload_tenant_mta_user: student1
+ocp4_workload_tenant_mta_namespace: student1-mta-workspace
+
+# Namespace: student1-mta-workspace
+# URL: https://mta-student1-mta-workspace.apps.cluster.example.com
+----
+
+=== Enable Authentication
+
+[source,yaml]
+----
+ocp4_workload_tenant_mta_feature_auth_required: true
+
+# Users will need to login with credentials
+# Default credentials: admin / password (change on first login)
+----
+
+=== Enable Data Seeding
+
+[source,yaml]
+----
+ocp4_workload_tenant_mta_seed: true
+ocp4_workload_tenant_mta_feature_auth_required: false  # Required for seeding
+
+# Note: Authentication must be disabled when seeding is enabled
+# Seeding pre-populates MTA with sample applications and data
+----
+
+=== Adjust Storage Sizes
+
+[source,yaml]
+----
+ocp4_workload_tenant_mta_maven_data_volume_size: 20Gi
+ocp4_workload_tenant_mta_hub_database_volume_size: 10Gi
+
+# Increase storage for larger workloads
+----
+
+=== Use Specific Storage Classes
+
+[source,yaml]
+----
+ocp4_workload_tenant_mta_rwx_storage_class: ocs-storagecluster-cephfs
+ocp4_workload_tenant_mta_rwo_storage_class: gp3-csi
+
+# Specify storage classes for RWX and RWO volumes
+----
+
+=== Different Helm Chart Version
+
+[source,yaml]
+----
+ocp4_workload_tenant_mta_repo_tag: v1.2.0
+
+# Use a specific tagged version of the Helm chart
+----
+
+== User Information Output
+
+The role outputs the following user information via `agnosticd_user_info`:
+
+=== When Authentication is Enabled
+
+[source,yaml]
+----
+user_info:
+  mta_url: https://mta-user-abc123-mta.apps.cluster.example.com
+  tackle_user: user-abc123
+  tackle_password: password
+----
+
+=== When Authentication is Disabled
+
+[source,yaml]
+----
+user_info:
+  mta_url: https://mta-user-abc123-mta.apps.cluster.example.com
+----
+
+== Prerequisites Checklist
+
+Before running this role, ensure:
+
+1. ✅ OpenShift cluster is accessible
+2. ✅ OpenShift GitOps/ArgoCD is installed in `openshift-gitops` namespace
+3. ✅ MTA operator is installed cluster-wide (via `ocp4_workload_cluster_mta`)
+4. ✅ User's ArgoCD project exists (e.g., `appproject-user-abc123`)
+5. ✅ Sufficient storage is available for PVCs
+
+== Troubleshooting
+
+=== ArgoCD Not Found
+
+**Error**: "Openshift Gitops / ArgoCD is not installed."
+
+**Solution**: Install OpenShift GitOps operator first:
+[source,bash]
+----
+oc create -k 'https://github.com/redhat-developer/gitops-operator/config/overlays/latest?ref=v1.9.0'
+----
+
+=== ArgoCD AppProject Not Found
+
+**Error**: "ArgoCD AppProject 'appproject-user-abc123' does not exist in openshift-gitops namespace."
+
+**Solution**: Create the ArgoCD AppProject for the user first:
+[source,yaml]
+----
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: appproject-user-abc123
+  namespace: openshift-gitops
+spec:
+  destinations:
+  - namespace: '*'
+    server: 'https://kubernetes.default.svc'
+  sourceRepos:
+  - '*'
+----
+
+Or verify the `ocp4_workload_tenant_mta_user_app_project_prefix` and `ocp4_workload_tenant_mta_user` variables are correct.
+
+=== Namespace Already Exists
+
+**Issue**: Namespace already exists from previous deployment
+
+**Solution**: Delete the old namespace first or use a different namespace name
+
+=== ArgoCD Application Not Syncing
+
+**Issue**: ArgoCD Application is created but not syncing
+
+**Solution**:
+- Check ArgoCD project permissions
+- Verify GitHub repository is accessible
+- Check ArgoCD Application status: `oc get application -n openshift-gitops`
+
+=== Tackle CR Not Created
+
+**Issue**: MTA UI not accessible, Tackle CR missing
+
+**Solution**:
+- Verify MTA operator is running: `oc get pods -n openshift-mta`
+- Check operator logs: `oc logs -n openshift-mta deployment/mta-operator`
+- Verify Tackle CR exists: `oc get tackle -n {namespace}`
+
+=== Storage Issues
+
+**Issue**: PVCs stuck in Pending state
+
+**Solution**:
+- Check available storage classes: `oc get storageclass`
+- Verify storage quota: `oc describe quota -n {namespace}`
+- Specify explicit storage classes if needed
+
+== Removal
+
+To remove the MTA tenant instance:
+
+[source,bash]
+----
+# Set ACTION to destroy
+ACTION=destroy ansible-playbook playbook.yml
+
+# Or manually:
+oc delete application {user}-mta -n openshift-gitops
+oc delete namespace {user}-mta
+----
+
+== Architecture Decisions
+
+=== Why ArgoCD?
+
+* **GitOps Workflow**: Declarative, version-controlled deployments
+* **Self-Healing**: Automatically corrects configuration drift
+* **Visibility**: Clear view of deployment status and history
+* **RHDP Standard**: Aligns with RHDP deployment patterns
+
+=== Why Helm Chart?
+
+* **Templating**: Flexible configuration for different environments
+* **Reusability**: Same chart can be used across multiple deployments
+* **Version Control**: Easy to track and rollback changes
+* **RHDP Standard**: Consistent with other RHDP workloads
+
+=== Why Not Direct Tackle CR?
+
+* **Consistency**: Helm chart ensures consistent deployments
+* **Flexibility**: Chart handles operator installation, namespace setup, etc.
+* **Maintainability**: Changes to MTA deployment centralized in chart
+
+== Notes
+
+* This role is designed for **single-user** deployments only
+* For multi-user deployments, call this role multiple times with different user variables
+* The MTA operator must be installed cluster-wide before using this role
+* Authentication is **disabled by default** for easier demo/workshop scenarios
+* Seeding requires authentication to be **disabled** (operator limitation)
+* Default credentials (when auth enabled): `admin` / `password` (must change on first login)
+* Storage volumes are created with default storage class unless explicitly specified
+* ArgoCD Application sync policy is set to manual (not automatic)
+
+== Related Roles
+
+* **ocp4_workload_cluster_mta**: Installs MTA operator cluster-wide (prerequisite)
+* **OpenShift GitOps**: Required for ArgoCD functionality
+
+== Additional Resources
+
+* **MTA Documentation**: https://access.redhat.com/documentation/en-us/migration_toolkit_for_applications/
+* **Helm Chart Repository**: https://github.com/redhat-gpte-devopsautomation/agnosticd_workload_helm_charts
+* **OpenShift GitOps**: https://docs.openshift.com/gitops/latest/
+* **Tackle Operator**: https://github.com/konveyor/tackle2-operator
+
+== Version History
+
+* **v1.0** - Initial release with single-user ArgoCD-based deployment
+* Uses MTA 8.x / Tackle 2.x
+* Simplified from previous multi-user implementation

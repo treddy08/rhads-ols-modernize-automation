@@ -1,0 +1,51 @@
+---
+- name: Check Openshift Gitops / ArgoCD installation
+  kubernetes.core.k8s_info:
+    api_version: argoproj.io/v1alpha1
+    kind: ArgoCD
+    name: openshift-gitops
+    namespace: openshift-gitops
+  register: r_argocd
+
+- name: Assert that GitOps is installed
+  ansible.builtin.assert:
+    that: r_argocd.resources | length > 0
+    msg: "Openshift Gitops / ArgoCD is not installed."
+
+- name: Check ArgoCD AppProject exists
+  kubernetes.core.k8s_info:
+    api_version: argoproj.io/v1alpha1
+    kind: AppProject
+    name: "{{ ocp4_workload_tenant_mta_user_app_project_prefix }}-{{ ocp4_workload_tenant_mta_user }}"
+    namespace: openshift-gitops
+  register: r_appproject
+
+- name: Assert that ArgoCD AppProject exists
+  ansible.builtin.assert:
+    that: r_appproject.resources | length > 0
+    msg: "ArgoCD AppProject '{{ ocp4_workload_tenant_mta_user_app_project_prefix }}-{{ ocp4_workload_tenant_mta_user }}' does not exist in openshift-gitops namespace."
+
+- name: Single user installation
+  block:
+  - name: Install MTA (single user)
+    kubernetes.core.k8s:
+      state: present
+      definition: "{{ lookup('template', 'application.yaml.j2') }}"
+
+  - name: Save MTA user info (single user, auth enabled)
+    when: ocp4_workload_tenant_mta_feature_auth_required | default(true)
+    agnosticd.core.agnosticd_user_info:
+      data:
+        mta_url: >-
+          https://mta-{{ ocp4_workload_tenant_mta_namespace }}.{{
+          openshift_cluster_ingress_domain }}
+        tackle_user: "{{ ocp4_workload_tenant_mta_user }}"
+        tackle_password: "{{ ocp4_workload_tenant_mta_password }}"
+
+  - name: Save MTA user info (single user, auth disabled)
+    when: not ocp4_workload_tenant_mta_feature_auth_required | default(true)
+    agnosticd.core.agnosticd_user_info:
+      data:
+        mta_url: >-
+          https://mta-{{ ocp4_workload_tenant_mta_namespace }}.{{
+          openshift_cluster_ingress_domain }}
